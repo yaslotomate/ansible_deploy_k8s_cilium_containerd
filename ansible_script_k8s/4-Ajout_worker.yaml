@@ -1,0 +1,69 @@
+# k8s_workers.yml
+---
+- hosts: masters
+  remote_user: pc
+  become: yes
+  become_method: sudo
+  become_user: root
+  gather_facts: yes
+  connection: ssh
+
+  tasks:
+
+   - name: Obtenez le jeton pour joindre les nœuds avec le maître Kube.
+     shell: kubeadm token create  --print-join-command
+     register: kubernetes_join_command
+
+   - debug:
+       msg: "{{ kubernetes_join_command.stdout }}"
+
+   - name: Copiez la commande de jointure dans le fichier local.
+     become: false
+     local_action: copy content="{{ kubernetes_join_command.stdout_lines[0] }}" dest="/tmp/kubernetes_join_command" mode=0777
+
+
+- hosts: workers
+  remote_user: pc
+  become: yes
+  become_method: sudo
+  become_user: root
+  gather_facts: yes
+  connection: ssh
+
+  tasks:
+
+   - name: Copiez la commande de join sur les nœuds de travail.
+     become: yes
+     become_method: sudo
+     become_user: root
+     copy:
+       src: /tmp/kubernetes_join_command
+       dest: /tmp/kubernetes_join_command
+       mode: 0777
+
+   - name: Join les nœuds de travail avec le maître.
+     become: yes
+     become_method: sudo
+     become_user: root
+     command: sh /tmp/kubernetes_join_command
+     register: joined_or_not
+
+   - debug:
+       msg: "{{ joined_or_not.stdout }}"
+
+- hosts: masters
+  remote_user: pc
+  become: yes
+  become_method: sudo
+  become_user: root
+  gather_facts: yes
+  connection: ssh
+
+  tasks:
+
+   - name: Configure kubectl command auto-completion.
+     lineinfile:
+       dest: /home/{{ ansible_user }}/.bashrc
+       line: 'source <(kubectl completion bash)'
+       insertafter: EOF
+...
